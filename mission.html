@@ -20,6 +20,9 @@
         .progress-fill { background: #4ecca3; height: 100%; width: 0%; transition: width 0.3s; }
         .hidden { display: none; }
         .qr-simulation { margin-top: 20px; padding: 15px; background: #0f3460; border-radius: 5px; }
+        .scanner-view { background: #000; padding: 30px; border: 2px dashed #4ecca3; border-radius: 10px; margin: 20px 0; position: relative; }
+        .scanner-laser { position: absolute; left: 0; right: 0; height: 3px; background: #e94560; animation: scan 1.5s infinite linear; }
+        @keyframes scan { 0% { top: 10%; } 50% { top: 90%; } 100% { top: 10%; } }
     </style>
 </head>
 <body>
@@ -36,11 +39,14 @@
         <div id="student-screen" class="hidden">
             <h2 id="student-welcome"></h2>
             <p id="student-target"></p>
-            <h3 style="font-size: 50px; color: #4ecca3; margin: 10px 0;" id="student-score">0 / 0</h3>
+            <div style="background: #0f3460; padding: 15px; border-radius: 10px; margin: 20px 0;">
+                <p style="margin:0; color:#4ecca3; font-weight:bold;">현재 내가 찾은 보물 개수</p>
+                <h3 style="font-size: 55px; color: #ffdd59; margin: 10px 0;" id="student-score">0 / 0</h3>
+            </div>
             
             <div class="qr-simulation">
-                <p style="margin-top:0; color:#ffdd59;">🔍 [보물 QR 코드 스캔 영역]</p>
-                <button onclick="scanQR()" style="font-size:18px; padding:15px 25px;">보물 찾았다! 클릭! 📸</button>
+                <p style="margin-top:0; color:#4ecca3;">📷 교실에 숨겨진 보물 QR코드를 찾으면 아래 버튼을 누르세요.</p>
+                <button onclick="openScanner()" style="font-size:18px; padding:15px 25px; background-color:#4ecca3;">보물 QR코드 스캔하기 📸</button>
             </div>
             
             <div id="mission-complete" class="hidden" style="background:#e94560; padding:20px; border-radius:5px; margin-top:20px;">
@@ -48,6 +54,26 @@
                 <p style="font-size:18px; margin:10px 0;" id="reward-card-text"></p>
                 <p style="font-weight:bold; color:#ffdd59; margin:0;">⚠️ 이제 자기 컴퓨터 자리에 예쁘게 앉아서 친구들을 기다리세요!</p>
             </div>
+        </div>
+
+        <div id="scanner-screen" class="hidden">
+            <h2>📷 보물 QR 코드 스캔 중...</h2>
+            <p>태블릿 카메라를 QR코드에 가까이 대 주세요.</p>
+            <div class="scanner-view">
+                <div class="scanner-laser"></div>
+                <p style="color:#4ecca3; font-size:20px; font-weight:bold; margin:40px 0;">[ 렌즈 정렬 중... ]</p>
+            </div>
+            <p style="color:#aaa; font-size:14px;">몇 번 보물 QR 코드를 찍었나요? (테스트용 선택)</p>
+            <select id="qr-number-select" style="padding:10px; font-size:16px; border-radius:5px;">
+                <option value="1">1번 보물 QR</option>
+                <option value="2">2번 보물 QR</option>
+                <option value="3">3번 보물 QR</option>
+                <option value="4">4번 보물 QR</option>
+                <option value="5">5번 보물 QR</option>
+            </select>
+            <button onclick="processScan()" style="background:#4ecca3; margin-left:10px;">스캔 완료</button>
+            <br>
+            <button onclick="closeScanner()" style="background:#555; margin-top:15px; font-size:14px; padding:5px 10px;">취소하고 돌아가기</button>
         </div>
 
         <div id="admin-screen" class="hidden">
@@ -66,7 +92,6 @@
     </div>
 
     <script>
-        // 학생 정보 공백 제거 매핑
         const studentInfo = {
             "김제이": { target: 5, color: "초록" },
             "정현우": { target: 5, color: "초록" },
@@ -83,9 +108,9 @@
         firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
         let currentStudent = "";
+        let scannedHistory = []; // 현재 학생이 찍은 QR 번호 저장 배열
 
         function login() {
-            // 입력값에서 앞뒤 공백 및 글자 사이 공백까지 전부 제거하여 비교
             const input = document.getElementById("username-input").value.replace(/\s+/g, "");
             if (!input) return;
 
@@ -95,20 +120,27 @@
                 currentStudent = input;
                 showStudentScreen();
             } else {
-                alert("등록되지 않은 이름입니다. 명단을 확인해 주세요! (입력한 이름: " + input + ")");
+                alert("등록되지 않은 이름입니다. 명단을 확인해 주세요!");
             }
         }
 
         function showStudentScreen() {
             document.getElementById("login-screen").classList.add("hidden");
+            document.getElementById("scanner-screen").classList.add("hidden");
             document.getElementById("student-screen").classList.remove("hidden");
             document.getElementById("student-welcome").innerText = `👨‍🚀 ${currentStudent} 대원 환영합니다!`;
             document.getElementById("student-target").innerText = `목표: 보물 코드를 [ ${studentInfo[currentStudent].target}개 ] 찾으세요!`;
             
+            // 파이어베이스에서 실시간 스캔 기록 가져오기
             db.ref('missions/' + currentStudent).on('value', (snapshot) => {
-                let score = snapshot.val() || 0;
+                let data = snapshot.val() || { score: 0, qrList: "" };
+                let score = data.score || 0;
+                let qrListStr = data.qrList || "";
+                scannedHistory = qrListStr ? qrListStr.split(",") : [];
+
                 let target = studentInfo[currentStudent].target;
                 document.getElementById("student-score").innerText = `${score} / ${target}`;
+                
                 if (score >= target) {
                     document.getElementById("mission-complete").classList.remove("hidden");
                     document.getElementById("reward-card-text").innerText = `교실 뒤 바구니에서 [ ${studentInfo[currentStudent].color}색 미션 카드 ]를 한 장 가져가세요!`;
@@ -118,12 +150,46 @@
             });
         }
 
-        function scanQR() {
+        function openScanner() {
+            document.getElementById("student-screen").classList.add("hidden");
+            document.getElementById("scanner-screen").classList.remove("hidden");
+        }
+
+        function closeScanner() {
+            document.getElementById("scanner-screen").classList.add("hidden");
+            document.getElementById("student-screen").classList.remove("hidden");
+        }
+
+        function processScan() {
+            const qrNum = document.getElementById("qr-number-select").value;
             let target = studentInfo[currentStudent].target;
-            db.ref('missions/' + currentStudent).transaction((currentScore) => {
-                let score = currentScore || 0;
-                if (score < target) return score + 1;
-                return score; 
+
+            // 중복 체크: 이미 배열에 있는 번호인지 확인
+            if (scannedHistory.includes(qrNum)) {
+                alert(`⚠️ 이미 찾은 ${qrNum}번 보물입니다! 다른 QR 코드를 찾아보세요.`);
+                closeScanner();
+                return;
+            }
+
+            // 새로운 QR인 경우 처리 애니메이션 연출 후 데이터 반영
+            alert(`✅ 삐빅-! 새로운 ${qrNum}번 보물 스캔 성공!`);
+            
+            db.ref('missions/' + currentStudent).transaction((currentData) => {
+                let data = currentData || { score: 0, qrList: "" };
+                let score = data.score || 0;
+                let qrListStr = data.qrList || "";
+                let list = qrListStr ? qrListStr.split(",") : [];
+
+                if (score < target && !list.includes(qrNum)) {
+                    list.push(qrNum);
+                    return {
+                        score: score + 1,
+                        qrList: list.join(",")
+                    };
+                }
+                return currentData; 
+            }, () => {
+                closeScanner();
             });
         }
 
@@ -135,7 +201,8 @@
                 let tbody = document.getElementById("dashboard-body");
                 tbody.innerHTML = "";
                 for (let name in studentInfo) {
-                    let current = data[name] || 0;
+                    let studentData = data[name] || { score: 0 };
+                    let current = studentData.score || 0;
                     let target = studentInfo[name].target;
                     let percent = Math.min((current / target) * 100, 100);
                     tbody.innerHTML += `<tr><td><strong>${name}</strong></td><td><div class="progress-bar"><div class="progress-fill" style="width: ${percent}%"></div></div><span>${current}/${target}</span></td></tr>`;
@@ -146,7 +213,9 @@
         function resetData() {
             if (confirm("모든 데이터를 초기화하시겠습니까?")) {
                 let resetObj = {};
-                for (let name in studentInfo) resetObj[name] = 0;
+                for (let name in studentInfo) {
+                    resetObj[name] = { score: 0, qrList: "" };
+                }
                 db.ref('missions').set(resetObj, () => alert("초기화되었습니다!"));
             }
         }
