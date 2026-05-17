@@ -19,10 +19,45 @@
         .progress-bar { background: #555; border-radius: 5px; overflow: hidden; display: inline-block; width: 100px; height: 15px; vertical-align: middle; margin-right: 5px; }
         .progress-fill { background: #4ecca3; height: 100%; width: 0%; transition: width 0.3s; }
         .hidden { display: none; }
+        
+        /* QR 스캔 화면 고퀄리티 디자인 수정 */
         .qr-simulation { margin-top: 20px; padding: 15px; background: #0f3460; border-radius: 5px; }
-        .scanner-view { background: #000; padding: 30px; border: 2px dashed #4ecca3; border-radius: 10px; margin: 20px 0; position: relative; }
-        .scanner-laser { position: absolute; left: 0; right: 0; height: 3px; background: #e94560; animation: scan 1.5s infinite linear; }
-        @keyframes scan { 0% { top: 10%; } 50% { top: 90%; } 100% { top: 10%; } }
+        .camera-container { display: flex; justify-content: center; align-items: center; margin: 25px 0; }
+        .scanner-view { 
+            background: #0b0f19; 
+            width: 260px; 
+            height: 260px; 
+            border: 3px solid #4ecca3; 
+            border-radius: 15px; 
+            position: relative; 
+            box-shadow: 0 0 20px rgba(78, 204, 163, 0.4);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        /* 완벽한 정사각형 QR 가이드 박스 */
+        .qr-target-box {
+            width: 180px;
+            height: 180px;
+            border: 2px dashed rgba(255, 255, 255, 0.6);
+            border-radius: 10px;
+            position: relative;
+        }
+        /* QR 코드 특유의 네모 모서리 인식 마크 재현 */
+        .qr-target-box::before {
+            content: ''; position: absolute; top: 10px; left: 10px; width: 35px; height: 35px; border: 5px solid #4ecca3;
+        }
+        .qr-target-box::after {
+            content: ''; position: absolute; top: 10px; right: 10px; width: 35px; height: 35px; border: 5px solid #4ecca3;
+        }
+        /* 실감나는 레이저 라인 */
+        .scanner-laser { 
+            position: absolute; left: 5px; right: 5px; height: 4px; 
+            background: rgba(233, 69, 96, 0.8); 
+            box-shadow: 0 0 10px #e94560;
+            animation: scan 2s infinite ease-in-out; 
+        }
+        @keyframes scan { 0% { top: 15px; } 50% { top: 240px; } 100% { top: 15px; } }
     </style>
 </head>
 <body>
@@ -58,20 +93,16 @@
 
         <div id="scanner-screen" class="hidden">
             <h2>📷 보물 QR 코드 스캔 중...</h2>
-            <p>태블릿 카메라를 QR코드에 가까이 대 주세요.</p>
-            <div class="scanner-view">
-                <div class="scanner-laser"></div>
-                <p style="color:#4ecca3; font-size:20px; font-weight:bold; margin:40px 0;">[ 렌즈 정렬 중... ]</p>
+            <p>정사각형 가이드라인 안에 QR코드를 맞춰주세요.</p>
+            
+            <div class="camera-container">
+                <div class="scanner-view">
+                    <div class="scanner-laser"></div>
+                    <div class="qr-target-box"></div>
+                </div>
             </div>
-            <p style="color:#aaa; font-size:14px;">몇 번 보물 QR 코드를 찍었나요? (테스트용 선택)</p>
-            <select id="qr-number-select" style="padding:10px; font-size:16px; border-radius:5px;">
-                <option value="1">1번 보물 QR</option>
-                <option value="2">2번 보물 QR</option>
-                <option value="3">3번 보물 QR</option>
-                <option value="4">4번 보물 QR</option>
-                <option value="5">5번 보물 QR</option>
-            </select>
-            <button onclick="processScan()" style="background:#4ecca3; margin-left:10px;">스캔 완료</button>
+
+            <button onclick="processScan()" style="background:#4ecca3; font-size:18px; padding:12px 30px;">[ 스캔 완료 ]</button>
             <br>
             <button onclick="closeScanner()" style="background:#555; margin-top:15px; font-size:14px; padding:5px 10px;">취소하고 돌아가기</button>
         </div>
@@ -108,7 +139,7 @@
         firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
         let currentStudent = "";
-        let scannedHistory = []; // 현재 학생이 찍은 QR 번호 저장 배열
+        let count = 0; // 중복 없는 가상 QR 생성을 위한 카운터
 
         function login() {
             const input = document.getElementById("username-input").value.replace(/\s+/g, "");
@@ -131,12 +162,9 @@
             document.getElementById("student-welcome").innerText = `👨‍🚀 ${currentStudent} 대원 환영합니다!`;
             document.getElementById("student-target").innerText = `목표: 보물 코드를 [ ${studentInfo[currentStudent].target}개 ] 찾으세요!`;
             
-            // 파이어베이스에서 실시간 스캔 기록 가져오기
             db.ref('missions/' + currentStudent).on('value', (snapshot) => {
-                let data = snapshot.val() || { score: 0, qrList: "" };
+                let data = snapshot.val() || { score: 0 };
                 let score = data.score || 0;
-                let qrListStr = data.qrList || "";
-                scannedHistory = qrListStr ? qrListStr.split(",") : [];
 
                 let target = studentInfo[currentStudent].target;
                 document.getElementById("student-score").innerText = `${score} / ${target}`;
@@ -161,18 +189,11 @@
         }
 
         function processScan() {
-            const qrNum = document.getElementById("qr-number-select").value;
             let target = studentInfo[currentStudent].target;
+            count++; // 누를 때마다 가상의 고유 QR 코드 아이디 생성
+            const mockQrId = "QR_CODE_" + count; 
 
-            // 중복 체크: 이미 배열에 있는 번호인지 확인
-            if (scannedHistory.includes(qrNum)) {
-                alert(`⚠️ 이미 찾은 ${qrNum}번 보물입니다! 다른 QR 코드를 찾아보세요.`);
-                closeScanner();
-                return;
-            }
-
-            // 새로운 QR인 경우 처리 애니메이션 연출 후 데이터 반영
-            alert(`✅ 삐빅-! 새로운 ${qrNum}번 보물 스캔 성공!`);
+            alert(`✅ 삐빅-! 새로운 보물 QR 코드 스캔 성공!`);
             
             db.ref('missions/' + currentStudent).transaction((currentData) => {
                 let data = currentData || { score: 0, qrList: "" };
@@ -180,8 +201,8 @@
                 let qrListStr = data.qrList || "";
                 let list = qrListStr ? qrListStr.split(",") : [];
 
-                if (score < target && !list.includes(qrNum)) {
-                    list.push(qrNum);
+                if (score < target) {
+                    list.push(mockQrId);
                     return {
                         score: score + 1,
                         qrList: list.join(",")
