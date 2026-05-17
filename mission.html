@@ -18,9 +18,6 @@
         .dashboard-table th { background-color: #0f3460; }
         .progress-bar { background: #555; border-radius: 5px; overflow: hidden; display: inline-block; width: 100px; height: 15px; vertical-align: middle; margin-right: 5px; }
         .progress-fill { background: #4ecca3; height: 100%; width: 0%; transition: width 0.3s; }
-        .status-badge { padding: 3px 8px; border-radius: 3px; font-weight: bold; font-size: 12px; }
-        .status-run { background-color: #ff9f43; }
-        .status-complete { background-color: #10ac84; }
         .hidden { display: none; }
         .qr-simulation { margin-top: 20px; padding: 15px; background: #0f3460; border-radius: 5px; }
     </style>
@@ -32,7 +29,7 @@
         
         <div id="login-screen">
             <p>대원 또는 선생님의 이름을 입력해 주세요.</p>
-            <input type="text" id="username-input" placeholder="이름 입력 (예: 준호, 이시연)">
+            <input type="text" id="username-input" placeholder="이름 입력 (예: 김제이, 이시연)">
             <button onclick="login()">입장</button>
         </div>
 
@@ -59,31 +56,25 @@
                 <thead>
                     <tr>
                         <th>이름</th>
-                        <th>수준 (목표)</th>
                         <th>진행도</th>
-                        <th>상태</th>
                     </tr>
                 </thead>
-                <tbody id="dashboard-body">
-                    </tbody>
+                <tbody id="dashboard-body"></tbody>
             </table>
             <button onclick="resetData()" style="margin-top:20px; background-color:#555;">전체 데이터 초기화</button>
         </div>
     </div>
 
     <script>
-        // [선생님 세팅] 우리 반 학생 이름과 수준을 정확하게 적어주세요.
-        // 수준에 따라 자동으로 가(5개), 나(4개), 다(3개) 목표와 카드 색상이 지정됩니다.
         const studentInfo = {
-            "김가원": { level: "가", target: 5, color: "초록" },
-            "이가투": { level: "가", target: 5, color: "초록" },
-            "박나원": { level: "나", target: 4, color: "노란" },
-            "최나투": { level: "나", target: 4, color: "노란" },
-            "지다원": { level: "다", target: 3, color: "빨간" },
-            "준호": { level: "다", target: 3, color: "빨간" }
+            "김제이": { target: 5, color: "초록" },
+            "정현우": { target: 5, color: "초록" },
+            "우승민": { target: 4, color: "노란" },
+            "이천희": { target: 4, color: "노란" },
+            "권규태": { target: 3, color: "빨간" },
+            "김채연": { target: 3, color: "빨간" }
         };
 
-        // 공개수업용 무료 실시간 데이터베이스 공용 키 (선생님만을 위해 임시 개설한 통로입니다)
         const firebaseConfig = {
             databaseURL: "https://open-class-2026-default-rtdb.firebaseio.com/"
         };
@@ -102,24 +93,20 @@
                 currentStudent = input;
                 showStudentScreen();
             } else {
-                alert("등록되지 않은 이름입니다. 다시 확인해 주세요!\n(가원, 이가투, 박나원, 최나투, 지다원, 준호 등으로 테스트해 보세요)");
+                alert("등록되지 않은 이름입니다. 명단을 확인해 주세요!");
             }
         }
 
         function showStudentScreen() {
             document.getElementById("login-screen").classList.add("hidden");
             document.getElementById("student-screen").classList.remove("hidden");
-            
             document.getElementById("student-welcome").innerText = `👨‍🚀 ${currentStudent} 대원 환영합니다!`;
             document.getElementById("student-target").innerText = `목표: 보물 코드를 [ ${studentInfo[currentStudent].target}개 ] 찾으세요!`;
             
-            // DB에서 내 점수 실시간 리스닝
             db.ref('missions/' + currentStudent).on('value', (snapshot) => {
                 let score = snapshot.val() || 0;
                 let target = studentInfo[currentStudent].target;
-                
                 document.getElementById("student-score").innerText = `${score} / ${target}`;
-
                 if (score >= target) {
                     document.getElementById("mission-complete").classList.remove("hidden");
                     document.getElementById("reward-card-text").innerText = `교실 뒤 바구니에서 [ ${studentInfo[currentStudent].color}색 미션 카드 ]를 한 장 가져가세요!`;
@@ -131,12 +118,9 @@
 
         function scanQR() {
             let target = studentInfo[currentStudent].target;
-            
             db.ref('missions/' + currentStudent).transaction((currentScore) => {
                 let score = currentScore || 0;
-                if (score < target) {
-                    return score + 1;
-                }
+                if (score < target) return score + 1;
                 return score; 
             });
         }
@@ -144,45 +128,24 @@
         function showAdminScreen() {
             document.getElementById("login-screen").classList.add("hidden");
             document.getElementById("admin-screen").classList.remove("hidden");
-            
-            // 전체 학생 데이터 실시간 리스닝하여 대시보드 갱신
             db.ref('missions').on('value', (snapshot) => {
                 let data = snapshot.val() || {};
                 let tbody = document.getElementById("dashboard-body");
                 tbody.innerHTML = "";
-
                 for (let name in studentInfo) {
                     let current = data[name] || 0;
                     let target = studentInfo[name].target;
-                    let level = studentInfo[name].level;
                     let percent = Math.min((current / target) * 100, 100);
-                    
-                    let isComplete = current >= target;
-                    let statusBadge = isComplete ? `<span class="status-badge status-complete">완료</span>` : `<span class="status-badge status-run">탐색 중</span>`;
-
-                    let row = `<tr>
-                        <td><strong>${name}</strong></td>
-                        <td>${level} 수준 (${target}개)</td>
-                        <td>
-                            <div class="progress-bar"><div class="progress-fill" style="width: ${percent}%"></div></div>
-                            <span>${current}/${target}</span>
-                        </td>
-                        <td>${statusBadge}</td>
-                    </tr>`;
-                    tbody.innerHTML += row;
+                    tbody.innerHTML += `<tr><td><strong>${name}</strong></td><td><div class="progress-bar"><div class="progress-fill" style="width: ${percent}%"></div></div><span>${current}/${target}</span></td></tr>`;
                 }
             });
         }
 
         function resetData() {
-            if (confirm("정말 모든 학생의 미션 데이터를 초기화하시겠습니까?")) {
+            if (confirm("모든 데이터를 초기화하시겠습니까?")) {
                 let resetObj = {};
-                for (let name in studentInfo) {
-                    resetObj[name] = 0;
-                }
-                db.ref('missions').set(resetObj, () => {
-                    alert("모든 데이터가 초기화되었습니다!");
-                });
+                for (let name in studentInfo) resetObj[name] = 0;
+                db.ref('missions').set(resetObj, () => alert("초기화되었습니다!"));
             }
         }
     </script>
