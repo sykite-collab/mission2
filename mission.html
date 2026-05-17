@@ -11,7 +11,7 @@
         h1 { color: #4ecca3; }
         .container { max-width: 600px; margin: 0 auto; background: #16213e; padding: 20px; border-radius: 10px; box-shadow: 0px 0px 15px rgba(0,0,0,0.5); }
         input, button { padding: 12px; font-size: 16px; border-radius: 5px; border: none; margin: 5px; }
-        input { width: 60%; text-align: center; }
+        input { width: 60%; text-align: center; color: #000; }
         button { background-color: #e94560; color: white; cursor: pointer; font-weight: bold; }
         .dashboard-table { width: 100%; border-collapse: collapse; margin-top: 20px; color: #fff; }
         .dashboard-table th, .dashboard-table td { border: 1px solid #0f3460; padding: 12px; text-align: center; }
@@ -66,6 +66,7 @@
     </div>
 
     <script>
+        // 학생 정보 공백 제거 매핑
         const studentInfo = {
             "김제이": { target: 5, color: "초록" },
             "정현우": { target: 5, color: "초록" },
@@ -84,7 +85,8 @@
         let currentStudent = "";
 
         function login() {
-            const input = document.getElementById("username-input").value.trim();
+            // 입력값에서 앞뒤 공백 및 글자 사이 공백까지 전부 제거하여 비교
+            const input = document.getElementById("username-input").value.replace(/\s+/g, "");
             if (!input) return;
 
             if (input === "admin" || input === "선생님" || input === "이시연") {
@@ -93,7 +95,7 @@
                 currentStudent = input;
                 showStudentScreen();
             } else {
-                alert("등록되지 않은 이름입니다. 명단을 확인해 주세요!");
+                alert("등록되지 않은 이름입니다. 명단을 확인해 주세요! (입력한 이름: " + input + ")");
             }
         }
 
