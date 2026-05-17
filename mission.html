@@ -6,6 +6,7 @@
     <title>우주 탐험대 - 미션 대시보드</title>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <script src="https://unpkg.com/html5-qrcode"></script>
     <style>
         body { font-family: 'Malgun Gothic', sans-serif; background-color: #1a1a2e; color: #fff; padding: 20px; text-align: center; }
         h1 { color: #4ecca3; }
@@ -20,44 +21,35 @@
         .progress-fill { background: #4ecca3; height: 100%; width: 0%; transition: width 0.3s; }
         .hidden { display: none; }
         
-        /* QR 스캔 화면 고퀄리티 디자인 수정 */
+        /* 고퀄리티 카메라 뷰 내부 디자인 */
         .qr-simulation { margin-top: 20px; padding: 15px; background: #0f3460; border-radius: 5px; }
-        .camera-container { display: flex; justify-content: center; align-items: center; margin: 25px 0; }
-        .scanner-view { 
-            background: #0b0f19; 
-            width: 260px; 
-            height: 260px; 
-            border: 3px solid #4ecca3; 
-            border-radius: 15px; 
-            position: relative; 
+        .camera-container { display: flex; justify-content: center; align-items: center; margin: 25px 0; position: relative; }
+        
+        /* html5-qrcode 자체 상자 디자인 강제 수정 */
+        #reader { 
+            width: 280px !important; 
+            height: 280px !important; 
+            border: 3px solid #4ecca3 !important; 
+            border-radius: 15px !important; 
+            overflow: hidden;
+            background: #0b0f19;
             box-shadow: 0 0 20px rgba(78, 204, 163, 0.4);
-            display: flex;
-            justify-content: center;
-            align-items: center;
         }
-        /* 완벽한 정사각형 QR 가이드 박스 */
-        .qr-target-box {
-            width: 180px;
-            height: 180px;
-            border: 2px dashed rgba(255, 255, 255, 0.6);
-            border-radius: 10px;
-            position: relative;
-        }
-        /* QR 코드 특유의 네모 모서리 인식 마크 재현 */
-        .qr-target-box::before {
-            content: ''; position: absolute; top: 10px; left: 10px; width: 35px; height: 35px; border: 5px solid #4ecca3;
-        }
-        .qr-target-box::after {
-            content: ''; position: absolute; top: 10px; right: 10px; width: 35px; height: 35px; border: 5px solid #4ecca3;
+        #reader video {
+            width: 100% !important;
+            height: 100% !important;
+            object-fit: cover !important;
         }
         /* 실감나는 레이저 라인 */
         .scanner-laser { 
-            position: absolute; left: 5px; right: 5px; height: 4px; 
+            position: absolute; left: 15px; right: 15px; height: 4px; 
             background: rgba(233, 69, 96, 0.8); 
             box-shadow: 0 0 10px #e94560;
             animation: scan 2s infinite ease-in-out; 
+            z-index: 10;
+            pointer-events: none;
         }
-        @keyframes scan { 0% { top: 15px; } 50% { top: 240px; } 100% { top: 15px; } }
+        @keyframes scan { 0% { top: 20px; } 50% { top: 260px; } 100% { top: 20px; } }
     </style>
 </head>
 <body>
@@ -93,18 +85,15 @@
 
         <div id="scanner-screen" class="hidden">
             <h2>📷 보물 QR 코드 스캔 중...</h2>
-            <p>정사각형 가이드라인 안에 QR코드를 맞춰주세요.</p>
+            <p style="color:#ffdd59;">상단에 알림창이 뜨면 반드시 [허용]을 눌러주세요!</p>
+            <p>정사각형 카메라 화면 안에 QR코드를 맞춰주세요.</p>
             
             <div class="camera-container">
-                <div class="scanner-view">
-                    <div class="scanner-laser"></div>
-                    <div class="qr-target-box"></div>
-                </div>
+                <div class="scanner-laser"></div>
+                <div id="reader"></div>
             </div>
 
-            <button onclick="processScan()" style="background:#4ecca3; font-size:18px; padding:12px 30px;">[ 스캔 완료 ]</button>
-            <br>
-            <button onclick="closeScanner()" style="background:#555; margin-top:15px; font-size:14px; padding:5px 10px;">취소하고 돌아가기</button>
+            <button onclick="closeScanner()" style="background:#555; margin-top:5px; font-size:16px; padding:10px 20px;">스캔 취소하고 돌아가기</button>
         </div>
 
         <div id="admin-screen" class="hidden">
@@ -139,7 +128,8 @@
         firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
         let currentStudent = "";
-        let count = 0; // 중복 없는 가상 QR 생성을 위한 카운터
+        let scannedHistory = []; 
+        let html5QrcodeScanner = null; // 카메라 관리 객체 변수
 
         function login() {
             const input = document.getElementById("username-input").value.replace(/\s+/g, "");
@@ -163,8 +153,10 @@
             document.getElementById("student-target").innerText = `목표: 보물 코드를 [ ${studentInfo[currentStudent].target}개 ] 찾으세요!`;
             
             db.ref('missions/' + currentStudent).on('value', (snapshot) => {
-                let data = snapshot.val() || { score: 0 };
+                let data = snapshot.val() || { score: 0, qrList: "" };
                 let score = data.score || 0;
+                let qrListStr = data.qrList || "";
+                scannedHistory = qrListStr ? qrListStr.split(",") : [];
 
                 let target = studentInfo[currentStudent].target;
                 document.getElementById("student-score").innerText = `${score} / ${target}`;
@@ -178,40 +170,81 @@
             });
         }
 
+        // 🎥 진짜 카메라 구동 및 QR 스캔 처리 함수
         function openScanner() {
             document.getElementById("student-screen").classList.add("hidden");
             document.getElementById("scanner-screen").classList.remove("hidden");
+
+            // 카메라 객체 생성 및 실행 (후면 카메라 우선 설정)
+            html5QrcodeScanner = new Html5Qrcode("reader");
+            html5QrcodeScanner.start(
+                { facingMode: "environment" }, // 태블릿의 후면 카메라 사용
+                { fps: 10, qrbox: 200 },
+                (qrCodeMessage) => {
+                    // QR 코드가 감지되었을 때 실행되는 구간
+                    let target = studentInfo[currentStudent].target;
+
+                    // 중복 체크: 이미 스캔했던 문구/주소의 QR인지 판단
+                    if (scannedHistory.includes(qrCodeMessage)) {
+                        alert("⚠️ 이미 찾은 보물 QR코드입니다! 다른 보물을 찾으세요.");
+                        return;
+                    }
+
+                    // 중복이 아니면 스캔 성공 처리
+                    alert("🎉 보물 QR코드 인식 성공!");
+                    
+                    db.ref('missions/' + currentStudent).transaction((currentData) => {
+                        let data = currentData || { score: 0, qrList: "" };
+                        let score = data.score || 0;
+                        let qrListStr = data.qrList || "";
+                        let list = qrListStr ? qrListStr.split(",") : [];
+
+                        if (score < target) {
+                            list.push(qrCodeMessage);
+                            return {
+                                score: score + 1,
+                                qrList: list.join(",")
+                            };
+                        }
+                        return currentData;
+                    }, () => {
+                        stopCamera();
+                    });
+                },
+                (errorMessage) => {
+                    // 스캔 중 에러는 조용히 무시 (렌즈가 QR을 찾기 전까지 계속 도는 상태)
+                }
+            ).catch(err => {
+                alert("카메라 연결에 실패했습니다. 상단 주소창에서 '카메라 허용'을 꼭 눌러주세요!");
+                closeScanner();
+            });
+        }
+
+        function stopCamera() {
+            if (html5QrcodeScanner) {
+                html5QrcodeScanner.stop().then(() => {
+                    showStudentScreen();
+                }).catch(err => {
+                    showStudentScreen();
+                });
+            } else {
+                showStudentScreen();
+            }
         }
 
         function closeScanner() {
-            document.getElementById("scanner-screen").classList.add("hidden");
-            document.getElementById("student-screen").classList.remove("hidden");
-        }
-
-        function processScan() {
-            let target = studentInfo[currentStudent].target;
-            count++; // 누를 때마다 가상의 고유 QR 코드 아이디 생성
-            const mockQrId = "QR_CODE_" + count; 
-
-            alert(`✅ 삐빅-! 새로운 보물 QR 코드 스캔 성공!`);
-            
-            db.ref('missions/' + currentStudent).transaction((currentData) => {
-                let data = currentData || { score: 0, qrList: "" };
-                let score = data.score || 0;
-                let qrListStr = data.qrList || "";
-                let list = qrListStr ? qrListStr.split(",") : [];
-
-                if (score < target) {
-                    list.push(mockQrId);
-                    return {
-                        score: score + 1,
-                        qrList: list.join(",")
-                    };
-                }
-                return currentData; 
-            }, () => {
-                closeScanner();
-            });
+            if (html5QrcodeScanner) {
+                html5QrcodeScanner.stop().then(() => {
+                    document.getElementById("scanner-screen").classList.add("hidden");
+                    document.getElementById("student-screen").classList.remove("hidden");
+                }).catch(err => {
+                    document.getElementById("scanner-screen").classList.add("hidden");
+                    document.getElementById("student-screen").classList.remove("hidden");
+                });
+            } else {
+                document.getElementById("scanner-screen").classList.add("hidden");
+                document.getElementById("student-screen").classList.remove("hidden");
+            }
         }
 
         function showAdminScreen() {
